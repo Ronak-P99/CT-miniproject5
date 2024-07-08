@@ -111,7 +111,6 @@ def delete_member(id):
     member = Members.query.get_or_404(id)
     db.session.delete(member)
     db.session.commit()
-    return jsonify({"message": "Customer removed successfully"}), 200
 
 @app.route('/workoutsessions', methods=['GET'])
 def get_workouts():
