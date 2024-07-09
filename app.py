@@ -1,7 +1,7 @@
 from flask import Flask, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from flask_marshmallow import Marshmallow
-from marshmallow import fields
+from marshmallow import fields, validate
 from marshmallow import ValidationError
 
 app = Flask(__name__)
@@ -9,44 +9,67 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+mysqlconnector://root:Mario101299
 db = SQLAlchemy(app)
 ma = Marshmallow(app)
 
-class MemberSchema(ma.Schema):
+class CustomerSchema(ma.Schema):
     id = fields.Int(dump_only=True)
     name = fields.String(required=True)
-    age = fields.String(required=True)
+    email = fields.String(required=True)
+    phone = fields.String(required=True)
 
     class Meta:
-        fields = ("name", "age", "id")
+        fields = ("name", "email", "phone", "id")
+
+customer_schema = CustomerSchema()
+customers_schema = CustomerSchema(many=True)
+
+class OrderSchema(ma.Schema):
+    id = fields.String(dump_only=True)
+    date = fields.Date(required=True)
+    customer_id = fields.String(required=True)
+
+    class Meta:
+        fields = ("id", "date", "customer_id")
+
+order_schema = OrderSchema()
+orders_schema = OrderSchema(many=True)
 
 
-class WorkoutSessionsSchema(ma.Schema):
-    session_id = fields.Int(dump_only=True)
-    member_id = fields.Int(required=True)
-    session_date = fields.Date(required=True)
-    session_time = fields.String(required=True)
-    activity = fields.String(required=True)
+class CustomerAccountSchema(ma.Schema):
+    id = fields.String(dump_only=True)
+    username = fields.String(required=True)
+    password = fields.String(required=True)
+    customer_id = fields.String(required=True)
+
+    class Meta:
+        fields = ("id", "username", "password", "customer_id")
+
+customer_account_schema = CustomerAccountSchema()
+customers_account_schema = CustomerAccountSchema(many=True)
+
+class ProductSchema(ma.Schema):
+    id = fields.String(dump_only=True)
+    name = fields.String(required=True, validate=validate.Length(min=1))
+    price = fields.Float(required=True, validate=validate.Range(min=0))
+
     
 
-member_schema = MemberSchema()
-members_schema = MemberSchema(many=True)
-workout_schema = WorkoutSessionsSchema()
-workouts_schema = WorkoutSessionsSchema(many=True)
+product_schema = ProductSchema()
+products_schema = ProductSchema(many=True)
 
-class Members(db.Model):
-    __tablename__ = 'Members'
+class Customer(db.Model):
+    __tablename__ = 'Customers'
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(255), nullable=False)
-    age = db.Column(db.String(10))
-    workouts = db.relationship('WorkoutSessions', backref='Members')
+    email = db.Column(db.String(320))
+    phone = db.Column(db.String(15))
+    orders = db.relationship('Order', backref='customer')
 
-class WorkoutSessions(db.Model):
-    __tablename__ = 'WorkoutSessions'
-    session_id = db.Column(db.Integer, primary_key=True)
-    session_date = db.Column(db.Date, nullable=False)
-    session_time = db.Column(db.String(255), nullable=False)
-    activity = db.Column(db.String(255), nullable=False)
-    member_id = db.Column(db.Integer, db.ForeignKey('Members.id'))
+class Order(db.Model):
+    __tablename__ = 'Orders'
+    id = db.Column(db.Integer, primary_key=True)
+    date = db.Column(db.Date, nullable=False)
+    customer_id = db.Column(db.Integer, db.ForeignKey('Customers.id'))
 
-'''# One-To-One
+# One-To-One
 
 class CustomerAccount(db.Model):
     __tablename__ = 'Customer_Accounts'
@@ -69,85 +92,165 @@ class Product(db.Model):
     name = db.Column(db.String(255), nullable=False)
     price = db.Column(db.Float, nullable=False)
     orders = db.relationship('Order', secondary=order_product, backref=db.backref('products'))
-'''
-@app.route('/members', methods=['GET'])
-def get_members():
-    members = Members.query.all()
-    return members_schema.jsonify(members)
 
-@app.route('/members/<int:id>', methods=['GET'])
-def get_one_member(id):
-    member = Members.query.get(id)
-    return member_schema.jsonify(member)
+@app.route('/customers', methods=['GET'])
+def get_customer():
+    customers = Customer.query.all()
+    return customers_schema.jsonify(customers)
 
-@app.route('/members', methods=['POST'])
-def add_member():
+@app.route('/customers/<int:id>', methods=['GET'])
+def get_one_customer(id):
+    customer = Customer.query.get(id)
+    return customer_schema.jsonify(customer)
+
+@app.route('/customers', methods=['POST'])
+def add_customer():
     try:
-        member_data = member_schema.load(request.json)
+        customer_data = customer_schema.load(request.json)
     except ValidationError as err:
         return jsonify(err.messages), 400
     
-    new_member = Members(name=member_data['name'], age=member_data['age'])
-    db.session.add(new_member)
+    new_customer = Customer(name=customer_data['name'], email=customer_data['email'], phone=customer_data['phone'])
+    db.session.add(new_customer)
     db.session.commit()
-    return jsonify({"message": "New member added successfully"}), 201
+    return jsonify({"message": "New customer added successfully"}), 201
 
-@app.route('/members/<int:id>', methods=['PUT'])
-def update_member(id):
-    member = Members.query.get_or_404(id)
+@app.route('/customers/<int:id>', methods=['PUT'])
+def update_customer(id):
+    customer = Customer.query.get_or_404(id)
     try:
-        member_data = member_schema.load(request.json)
+        customer_data = customer_schema.load(request.json)
     except ValidationError as err:
         return jsonify(err.messages), 400
     
-    member.name = member_data['name']
-    member.age = member_data['age']
-
-    db.session.commit()
-    return jsonify({"message": "Member details updated successfully"}), 200
-
-@app.route('/members/<int:id>', methods=['DELETE'])
-def delete_member(id):
-    member = Members.query.get_or_404(id)
-    db.session.delete(member)
+    customer.name = customer_data['name']
+    customer.email = customer_data['email']
+    customer.phone = customer_data['phone']
     db.session.commit()
 
-@app.route('/workoutsessions', methods=['GET'])
-def get_workouts():
-    workouts = WorkoutSessions.query.all()
-    return workouts_schema.jsonify(workouts)
+    return jsonify({"message": "Customer details updated successfully"}), 200
 
-@app.route('/workoutsessions/<int:id>', methods=['GET'])
-def get_one_workout(id):
-    workout = WorkoutSessions.query.get(id)
-    return workout_schema.jsonify(workout)
+@app.route('/customers/<int:id>', methods=['DELETE'])
+def delete_customer(id):
+    customer = Customer.query.get_or_404(id)
+    db.session.delete(customer)
+    db.session.commit()
+    return jsonify({"message": "Customer removed successfully"}), 200
 
-@app.route('/workoutsessions', methods=['POST'])
-def add_workouts():
+@app.route('/customers_account', methods=['GET'])
+def get_customer_account():
+    customers_account = CustomerAccount.query.all()
+    return customers_account_schema.jsonify(customers_account)
+
+@app.route('/customers_account/<int:id>', methods=['GET'])
+def get_one_customer_account(id):
+    customer_account = CustomerAccount.query.get(id)
+    return customer_account_schema.jsonify(customer_account)
+
+@app.route('/customers_account', methods=['POST'])
+def add_customer_account():
     try:
-        workout_data = workout_schema.load(request.json)
+        customer_account_data = customer_account_schema.load(request.json)
     except ValidationError as err:
         return jsonify(err.messages), 400
     
-    new_workout = WorkoutSessions(member_id=workout_data['member_id'], session_date=workout_data['session_date'], session_time=workout_data['session_time'], activity=workout_data['activity'])
-    db.session.add(new_workout)
+    new_customer_account = CustomerAccount(username=customer_account_data['username'], customer_id=customer_account_data['customer_id'], password=customer_account_data['password'])
+    db.session.add(new_customer_account)
     db.session.commit()
-    return jsonify({"message": "New workout added successfully"}), 201
+    return jsonify({"message": "New customer account added successfully"}), 201
 
-@app.route('/workoutsessions/<int:id>', methods=['PUT'])
-def update_workouts(id):
-    workout = WorkoutSessions.query.get_or_404(id)
+@app.route('/customers_account/<int:id>', methods=['PUT'])
+def update_customer_account(id):
+    customer_account = CustomerAccount.query.get_or_404(id)
     try:
-        workout_data = workout_schema.load(request.json)
+        customer_account_data = customer_account_schema.load(request.json)
     except ValidationError as err:
         return jsonify(err.messages), 400
     
-    workout.session_date = workout_data['session_date']
-    workout.session_time = workout_data['session_time']
-    workout.activity = workout_data['activity']
-
+    customer_account.username = customer_account_data['username']
+    customer_account.password = customer_account_data['password']
     db.session.commit()
-    return jsonify({"message": "Workout details updated successfully"}), 200
+
+    return jsonify({"message": "Customer Account details updated successfully"}), 200
+
+@app.route('/products', methods=['GET'])
+def get_products():
+    products = Product.query.all()
+    return products_schema.jsonify(products)
+
+@app.route('/products/<int:id>', methods=['GET'])
+def get_one_product(id):
+    product = Product.query.get(id)
+    return product_schema.jsonify(product)
+
+@app.route('/products', methods=['POST'])
+def add_product():
+    try:
+        product_data = product_schema.load(request.json)
+    except ValidationError as err:
+        return jsonify(err.messages), 400
+    
+    new_product = Product(name=product_data['name'], price=product_data['price'])
+    db.session.add(new_product)
+    db.session.commit()
+    return jsonify({"message": "New product added successfully"}), 201
+
+@app.route('/products/<int:id>', methods=['PUT'])
+def update_product(id):
+    product = Product.query.get_or_404(id)
+    try:
+        product_data = product_schema.load(request.json)
+    except ValidationError as err:
+        return jsonify(err.messages), 400
+    
+    product.name = product_data['name']
+    product.price = product_data['price']
+    db.session.commit()
+
+    return jsonify({"message": "Product details updated successfully"}), 200
+
+@app.route('/products/<int:id>', methods=['DELETE'])
+def delete_product(id):
+    product = Product.query.get_or_404(id)
+    db.session.delete(product)
+    db.session.commit()
+    return jsonify({"message": "Product removed successfully"}), 200
+
+@app.route('/orders', methods=['GET'])
+def get_orders():
+    orders = Order.query.all()
+    return orders_schema.jsonify(orders)
+
+@app.route('/orders/<int:id>', methods=['GET'])
+def get_one_order(id):
+    order = Order.query.get(id)
+    return order_schema.jsonify(order)
+
+@app.route('/orders', methods=['POST'])
+def add_order():
+    try:
+        order_data = order_schema.load(request.json)
+    except ValidationError as err:
+        return jsonify(err.messages), 400
+    
+    new_order = Order(date=order_data['date'], customer_id=order_data['customer_id'])
+    db.session.add(new_order)
+    db.session.commit()
+    return jsonify({"message": "New Order added successfully"}), 201
+
+@app.route('/orders/<int:id>', methods=['PUT'])
+def update_order(id):
+    order = Order.query.get_or_404(id)
+    try:
+        order_data = order_schema.load(request.json)
+    except ValidationError as err:
+        return jsonify(err.messages), 400
+    
+    order.date = order_data['date']
+    db.session.commit()
+
+    return jsonify({"message": "Order details updated successfully"}), 200
+
 
 # Initialize the database and create tables
 with app.app_context():
